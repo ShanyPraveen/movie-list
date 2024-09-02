@@ -17,12 +17,13 @@ StarRating.propTypes = {
   maxRating: PropTypes.number
 }
 
-export default function StarRating({ maxRating = 5, color, size }) {
+export default function StarRating({ maxRating = 5, color = "yellow", size, onSetRating }) {
   const [rating, setRating] = useState(0);
   const [tempRating, setTempRating] = useState(0);
 
   function handleClick(index) {
     setRating(index)
+    onSetRating(index)
   }
 
   const textStyle = {

@@ -1,8 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import StarRating from "./StarRating"
-import { useMovies } from "./useMovies";
-import { useLocalStorageState } from "./useLocalStorageState";
-import { useKey } from "./useKey";
 
 const average = (arr) =>
   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
@@ -10,12 +7,12 @@ const average = (arr) =>
 const KEY = '5244a731';
 
 export default function App() {
-  const [watched, setWatched] = useLocalStorageState([]);
-
+  const [movies, setMovies] = useState([]);
+  const [watched, setWatched] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
-
-  const { movies, isLoading, error } = useMovies(query)
 
   function handleSelectedId(id) {
     setSelectedId((selected) => selected === id ? null : id)
@@ -32,6 +29,45 @@ export default function App() {
   function handleRemoveWatched(id) {
     setWatched((watched) => watched.filter(mov => mov.imdbId !== id))
   }
+
+  const controller = new AbortController();
+
+  useEffect(() => {
+    async function fetchMovies() {
+      try {
+        setIsLoading(true);
+        setError("")
+        const res = await fetch(`http://www.omdbapi.com?apikey=${KEY}&s=${query}`, { signal: controller.signal });
+
+        if (!res.ok) throw new Error(`Something went wrong`);
+
+        const data = await res.json();
+
+        if (!data.Search) throw new Error(`Movie not found`);
+
+        setMovies(data.Search)
+        setIsLoading(false)
+        setError("")
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          setError(err.message);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    if (query.length < 3) {
+      setMovies([]);
+      setError("");
+
+      return;
+    }
+
+    fetchMovies();
+
+    return (() => controller.abort())
+  }, [query])
 
   return (
     <>
@@ -56,6 +92,48 @@ export default function App() {
   );
 }
 
+function Loader() {
+  return <p className="loader">Loading....</p>
+}
+
+function ErrorMessage({ message }) {
+  return <p className="loader">
+    <span>⛔</span> {message}
+  </p>
+}
+
+
+function Navbar({ children }) {
+  return <nav className="nav-bar">
+    <Logo />
+    {children}
+  </nav>
+}
+
+
+function Logo() {
+  return <div className="logo">
+    <span role="img">🍿</span>
+    <h1>usePopcorn</h1>
+  </div>
+}
+
+function Search({ query, setQuery }) {
+  return <input
+    className="search"
+    type="text"
+    placeholder="Search movies..."
+    value={query}
+    onChange={(e) => setQuery(e.target.value)}
+  />
+}
+
+function NumResults({ movies }) {
+  return <p className="num-results">
+    Found <strong>{movies.length}</strong> results
+  </p>
+}
+
 export function Main({ children }) {
   return <main className="main">
     {children}
@@ -75,6 +153,24 @@ function Box({ children }) {
     {isOpen && children}
   </div>
 }
+
+// function WatchedBox() {
+//   const [isOpen2, setIsOpen2] = useState(true);
+
+//   return <div className="box">
+//     <button
+//       className="btn-toggle"
+//       onClick={() => setIsOpen2((open) => !open)}
+//     >
+//       {isOpen2 ? "–" : "+"}
+//     </button>
+//     {isOpen2 && (
+//       <>
+//       </>
+//     )}
+//   </div>
+// }
+
 
 function MovieList({ movies, setSelectedId }) {
   return (
@@ -102,13 +198,8 @@ function Movie({ movie, setSelectedId }) {
 function SelectedMovie({ selectedId, onClose, onHandleAddWatched, watched }) {
   const [movie, setMovie] = useState({});
   const [isLoading, setIsLoading] = useState(false);
-  const [rating, setRating] = useState(0);
+  const [rating, setRating] = useState(0)
 
-  const count = useRef(0);
-
-  useEffect(() => {
-    if (rating) count.current++;
-  }, [rating])
   const {
     Title: title,
     Year: year,
@@ -130,8 +221,7 @@ function SelectedMovie({ selectedId, onClose, onHandleAddWatched, watched }) {
       poster,
       imdbRating: Number(imdbRating),
       runtime: Number(runtime.split(' ').at(0)),
-      userRating: rating,
-      count: count.current
+      userRating: rating
     }
 
     onHandleAddWatched(watched)
@@ -162,7 +252,18 @@ function SelectedMovie({ selectedId, onClose, onHandleAddWatched, watched }) {
     })
   }, [title])
 
-  useKey('escape', onClose);
+  useEffect(() => {
+    const callback = (e) => {
+      if (e.code === 'Escape') {
+        onClose();
+      }
+    }
+    document.addEventListener('keydown', callback)
+
+    return () => {
+      document.removeEventListener('keydown', callback)
+    }
+  }, [onClose])
 
   return <div className="details">
     {isLoading ? <div className="loader">loading...</div> :
@@ -266,75 +367,4 @@ function WatchedMovie({ movie, onHandleRemoveWatched }) {
       </button>
     </div>
   </li>
-}
-
-function Loader() {
-  return <p className="loader">Loading....</p>
-}
-
-function ErrorMessage({ message }) {
-  return <p className="loader">
-    <span>⛔</span> {message}
-  </p>
-}
-
-
-function Navbar({ children }) {
-  return <nav className="nav-bar">
-    <Logo />
-    {children}
-  </nav>
-}
-
-
-function Logo() {
-  return <div className="logo">
-    <span role="img">🍿</span>
-    <h1>usePopcorn</h1>
-  </div>
-}
-
-function Search({ query, setQuery }) {
-  const inputEl = useRef(null);
-  // const testState = useRef(0);
-
-  // console.log(testState)
-  // useEffect(() => {
-  //   console.log('runs')
-  //   testState.current++
-  // }, [setQuery])
-
-  useKey('enter', () => {
-    // document.addEventListener('keydown', callback)
-    inputEl.current.focus();
-  });
-
-
-  // useEffect(() => {
-  //   function callback(e) {
-  //     if (e.code === 'Enter') inputEl.current.focus();
-  //   }
-
-  //   document.addEventListener('keydown', callback)
-  //   inputEl.current.focus();
-
-  //   return () => document.removeEventListener('keydown', callback)
-  // }, [setQuery])
-
-  return <>
-    <input
-      className="search"
-      type="text"
-      placeholder="Search movies..."
-      value={query}
-      ref={inputEl}
-      onChange={(e) => setQuery(e.target.value)}
-    />
-  </>
-}
-
-function NumResults({ movies }) {
-  return <p className="num-results">
-    Found <strong>{movies.length}</strong> results
-  </p>
 }
